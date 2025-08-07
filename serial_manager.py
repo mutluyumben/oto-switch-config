@@ -37,6 +37,7 @@ class SerialManager:
             self.log(f"[+] {self.port} bağlantısı kapatıldı")
     
     def send_enter(self):
+        time.sleep(1)
         self.ser.write(b"\r\n")
         self.log("[>>] ENTER gönderildi")
         time.sleep(1)
@@ -192,10 +193,50 @@ class SerialManager:
             time.sleep(1)
         self.log("[⚠️] Yanıt süresi aşıldı!")
 
+    def read_display_output_with_space_spam(self):
+        buffer = ""
+
+        while True:
+            if self.ser.in_waiting:
+                data = self.ser.read(self.ser.in_waiting).decode(errors='ignore')
+                buffer += data
+                self.log(data.strip())
+
+                if "--- More ---" in data:
+                    self.ser.write(b' ')  # SPACE tuşu
+                    self.log("[SPAM] SPACE gönderildi")
+
+                elif "<HUAWEI>" in data or "]" in data:
+                    self.log("[✓] Config gösterimi tamamlandı.")
+                    break
+
+            time.sleep(0.1)
+
+    def send_line_with_retry(self, line, max_retries=5):
+        for attempt in range(1, max_retries + 1):
+            self.send_line(line)
+            time.sleep(1)
+            response = self.read_recent_output()
+
+            if "Error: The system is busy" not in response:
+                self.log(f"[✓] Komut başarılı: {line}")
+                return
+            else:
+                self.log(f"[⚠️] Sistem meşgul, tekrar denenecek ({attempt}/{max_retries}) -> {line}")
+                time.sleep(2)
+
+        self.log(f"[❌] Komut başarısız (maksimum deneme): {line}")
+
+    def read_recent_output(self):
+        output = ""
+        if self.ser.in_waiting:
+            output = self.ser.read(self.ser.in_waiting).decode(errors="ignore")
+            self.log(output.strip())
+        return output
 
     def send_config_file(self, filepath):
         self.log("[~] Config dosyası gönderiliyor...")
-        
+
         with open(filepath, "r", encoding="utf-8") as f:
             content = f.read()
         blocks = content.split("#")
@@ -207,14 +248,14 @@ class SerialManager:
 
             self.log(f"[>>] Blok {i+1} gönderiliyor...")
             for line in lines:
-                self.send_line(line)
-                self.wait_for_response_or_prompt()  # zamanlamayı buna bırak
+                self.send_line_with_retry(line)
 
             self.send_enter()
             self.wait_for_response_or_prompt()
             self.log(f"[✓] Blok {i+1} başarıyla gönderildi.")
 
         self.log("[✓] Tüm config blokları başarıyla gönderildi.")
+
 
 
 

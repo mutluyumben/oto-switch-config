@@ -20,6 +20,7 @@ class OtoConfigGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Aidata Oto-Config")
+        self.root.iconbitmap("assets/logo.ico")
         self.serial_manager = None
         self.build_gui()
 
@@ -57,6 +58,10 @@ class OtoConfigGUI:
 
         self.start_btn = tk.Button(form_frame, text="Bağlan ve Başlat", command=self.start_process, bg="green", fg="white")
         self.start_btn.grid(row=1, column=5, padx=10)
+
+        self.show_config_button = tk.Button(form_frame, text="Configi Göster", command=self.send_show_config_sequence)
+        self.show_config_button.grid(row=1, column=6, padx=5, pady=5)
+
 
         log_frame = tk.LabelFrame(self.root, text="Log Paneli", padx=10, pady=10)
         log_frame.pack(fill="both", expand=True, padx=10, pady=5)
@@ -179,7 +184,7 @@ class OtoConfigGUI:
             self.serial_manager.wait_for_prompt("(Y/N)")
             self.serial_manager.send_line("y")
             self.serial_manager.send_enter()
-            
+
             self.serial_manager.wait_for_prompt("Enter your choice(1-8):")
             self.serial_manager.send_line("1")
             self.serial_manager.send_enter()
@@ -187,7 +192,21 @@ class OtoConfigGUI:
             self.serial_manager.wait_for_prompt("Press ENTER to get started.")
             self.serial_manager.send_enter()
 
+            buffer = ""
+            while True:
+                output = self.serial_manager.read_output()
+                if output:
+                    buffer += output
+                    self.serial_manager.log(output.strip())
+
+                    if self.serial_manager.check_initial_password_prompt(buffer):
+                        buffer = ""  # yakaladıysan sıfırla
+                        time.sleep(1)
+                        break
             
+            time.sleep(3)
+            self.serial_manager.send_enter()
+            self.serial_manager.send_enter()
             self.serial_manager.send_config_file(config_path)
             self.print_log("[~] Konfigürasyon başarıyla yüklendi.")
 
@@ -212,6 +231,58 @@ class OtoConfigGUI:
 
         except Exception as e:
             self.print_log(f"[HATA] {str(e)}")
+
+    def send_show_config_sequence(self):
+        if not self.serial_manager or not self.serial_manager.ser:
+            self.print_log("[HATA] Seri bağlantı bulunamadı.")
+            return
+
+        def run():
+            try:
+                self.print_log("[Başlatıldı] Config görüntüleme işlemi başlatılıyor...")
+
+                self.serial_manager.wait_for_boot_menu_or_password()
+                self.serial_manager.send_line("Admin@huawei.com")
+
+                self.serial_manager.wait_for_prompt("Enter your choice(1-8):")
+                self.serial_manager.send_line("7")
+                self.serial_manager.send_enter()
+
+                self.serial_manager.wait_for_prompt("(Y/N)")
+                self.serial_manager.send_line("y")
+                self.serial_manager.send_enter()
+
+                self.serial_manager.wait_for_prompt("Enter your choice(1-8):")
+                self.serial_manager.send_line("1")
+                self.serial_manager.send_enter()
+
+                self.serial_manager.wait_for_prompt("Press ENTER to get started.")
+                self.serial_manager.send_enter()
+
+                buffer = ""
+                while True:
+                    output = self.serial_manager.read_output()
+                    if output:
+                        buffer += output
+                        self.serial_manager.log(output.strip())
+
+                        if self.serial_manager.check_initial_password_prompt(buffer):
+                            buffer = ""  # yakaladıysan sıfırla
+                            time.sleep(1)
+                            break
+
+                self.serial_manager.wait_for_prompt(">", timeout=20)
+                self.serial_manager.send_line("system-view")
+                self.serial_manager.wait_for_prompt("]", timeout=5)
+                self.serial_manager.send_line("display current-configuration")
+
+                self.serial_manager.read_display_output_with_space_spam()
+
+                self.print_log("[✓] Config gösterimi tamamlandı.")
+            except Exception as e:
+                self.print_log(f"[HATA] İşlem sırasında hata oluştu: {e}")
+
+        threading.Thread(target=run).start()
 
 
 if __name__ == "__main__":
